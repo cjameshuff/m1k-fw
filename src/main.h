@@ -9,15 +9,7 @@
 #define A 0
 #define B 1
 
-#define cal_table_base = 0x00080000 + 256*254; 
-
-#ifdef __GNUC__
-#   define likely(x)       __builtin_expect((x),1)
-#   define unlikely(x)     __builtin_expect((x),0)
-#else
-#   define likely(x)       (x)
-#   define unlikely(x)     (x)
-#endif
+#define cal_table_base = 0x00080000 + 256*254;
 
 typedef enum chan_mode{
 	DISABLED = 0,
