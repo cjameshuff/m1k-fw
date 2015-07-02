@@ -3,7 +3,7 @@
 
 #include <asf.h>
 
-#define stringify(x)			#x
+#define stringify(x)            #x
 #define xstringify(s) stringify(s)
 #define SWAP16(x)        ((((x) & 0xff00)>> 8) | (((x) & 0x00ff) << 8))
 #define A 0
@@ -12,45 +12,45 @@
 #define cal_table_base = 0x00080000 + 256*254;
 
 typedef enum chan_mode{
-	DISABLED = 0,
-	SVMI = 1,
-	SIMV = 2,
+    DISABLED = 0,
+    SVMI = 1,
+    SIMV = 2,
 } chan_mode;
 
 
 typedef union IN_packet {
-	struct {
-		uint16_t data_a_v[256];
-		uint16_t data_a_i[256];
-		uint16_t data_b_v[256];
-		uint16_t data_b_i[256];
-	};
-	uint16_t data[1024];
+    struct {
+        uint16_t data_a_v[256];
+        uint16_t data_a_i[256];
+        uint16_t data_b_v[256];
+        uint16_t data_b_i[256];
+    };
+    uint16_t data[1024];
 } IN_packet;
 
 typedef union OUT_packet {
-	struct {
-		uint16_t data_a[256];
-		uint16_t data_b[256];
-	};
-	uint16_t data[512];
+    struct {
+        uint16_t data_a[256];
+        uint16_t data_b[256];
+    };
+    uint16_t data[512];
 } OUT_packet;
 
 typedef struct rgb {
     uint8_t r;
-	uint8_t g;
-	uint8_t b;
+    uint8_t g;
+    uint8_t b;
 } rgb;
 
 IN_packet packets_in[2];
 OUT_packet packets_out[2];
 
 typedef enum ch_params {
-	i0_dac = 0,
-	v0_adc = 1,
-	i0_adc = 2,
-	p1_simv = 3,
-	p2_simv = 4
+    i0_dac = 0,
+    v0_adc = 1,
+    i0_adc = 2,
+    p1_simv = 3,
+    p2_simv = 4
 } ch_params;
 
 uint16_t cal_data[IFLASH0_PAGE_SIZE/sizeof(uint16_t)];
