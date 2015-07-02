@@ -1,8 +1,8 @@
 
 build: all
+	@ if [ -e ./obj/src/main.su ]; then echo "\nMaximum Stack Size: $$(cat $$(find . -name \*.su) | awk '{s+=$$2} END {print s}')\n\n"; fi
 
 flash: cleanLocal all
-	@ if [ -e ./src/main.su ]; then echo -ne "\nMaximum Stack Size: $$(cat $$(find . -name \*.su) | awk '{s+=$$2} END {print s}')\n\n"; fi
 	./set_bootloader.rb
 	@ sleep 1
 	bossac -e -w -v -b m1000.bin 

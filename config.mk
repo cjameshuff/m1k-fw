@@ -10,7 +10,7 @@ BUILD_DIR = ./obj
 
 # List of C source files.
 CSRCS = \
-       ../src/main.c \
+       src/main.c \
        common/services/clock/sam3u/sysclk.c               \
        common/services/delay/sam/cycle_counter.c          \
        common/services/sleepmgr/sam/sleepmgr.c            \
