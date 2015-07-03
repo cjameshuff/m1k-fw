@@ -5,31 +5,19 @@
 #include "main.h" // for frame_number
 #include "conf_board.h"
 
-typedef union IN_packet {
-    // struct {
-    //     uint16_t data_a_v[256];
-    //     uint16_t data_a_i[256];
-    //     uint16_t data_b_v[256];
-    //     uint16_t data_b_i[256];
-    // };
-    uint16_t data[1024];
-} IN_packet;
+#define CHUNK_SAMPLES  (256)
+#define IN_PACKET_SIZE  (sizeof(uint16_t)*CHUNK_SAMPLES*4)
+#define OUT_PACKET_SIZE  (sizeof(uint16_t)*CHUNK_SAMPLES*2)
 
-typedef union OUT_packet {
-    // struct {
-    //     uint16_t data_a[256];
-    //     uint16_t data_b[256];
-    // };
-    uint16_t data[512];
-} OUT_packet;
+typedef struct {
+    uint16_t in[CHUNK_SAMPLES*4];
+    uint16_t out[CHUNK_SAMPLES*2];
+} bulk_buffer_t;
 
 
 static bool start_timer = false;
 static volatile uint16_t start_frame = 0;
 
-static uint32_t buffer_index;
-static volatile uint32_t packet_index_send_in;
-static volatile uint32_t packet_index_send_out;
 static volatile bool send_in;
 static volatile bool send_out;
 static volatile bool sending_in;
@@ -37,8 +25,9 @@ static volatile bool sending_out;
 static volatile bool sent_in;
 static volatile bool sent_out;
 
-static IN_packet packets_in[2];
-static OUT_packet packets_out[2];
+static bulk_buffer_t buffers[2];
+static bulk_buffer_t * active_buffer = &(buffers[0]);
+static bulk_buffer_t * comm_buffer = &(buffers[1]);
 
 static bool interleave_data = false;
 
@@ -64,11 +53,9 @@ static void main_vendor_bulk_in_received(udd_ep_status_t status,
 
 void config_bulk_sampling(uint16_t period, uint16_t sync)
 {
-    if (period < 1)
-    {
-        tc_stop(TC0, 2);
-    }
-    else
+    tc_stop(TC0, 2);
+    
+    if (period > 1)
     {
         start_timer = false;
         udd_ep_abort(UDI_VENDOR_EP_BULK_IN);
@@ -79,22 +66,6 @@ void config_bulk_sampling(uint16_t period, uint16_t sync)
         sending_out = false;
         send_out = true;
         send_in = false;
-        
-        buffer_index = 0;
-        packet_index_send_out = 0;
-        packet_index_send_in = 0;
-        
-        current_chan = A;
-        sample_ctr = 0;
-        signal_out = &packets_out[buffer_index].data[0];
-        if (unlikely(interleave_data)) {
-            meas_v_in = &packets_in[buffer_index].data[0];
-            meas_i_in = &packets_in[buffer_index].data[1];
-        }
-        else {
-            meas_v_in = &packets_in[buffer_index].data[0];
-            meas_i_in = &packets_in[buffer_index].data[256];
-        }
         
         tc_write_ra(TC0, 2, 10);
         tc_write_rb(TC0, 2, period-10);
@@ -112,6 +83,21 @@ void poll_trigger(void)
 {
     if (start_timer && ((frame_number == start_frame) || (start_frame == 0)))
     {
+        // Perform initial buffer swap: active_buffer is empty, comm_buffer has output signal data.
+        bulk_buffer_t * tmp = active_buffer;
+        active_buffer = comm_buffer;
+        comm_buffer = tmp;
+        
+        // Set up pointers for first chunk of samples.
+        current_chan = A;
+        sample_ctr = 0;
+        signal_out = active_buffer->out;
+        meas_v_in = active_buffer->in;
+        if(unlikely(interleave_data))
+            meas_i_in = meas_v_in + 1;
+        else
+            meas_i_in = meas_v_in + CHUNK_SAMPLES;
+        
         tc_start(TC0, 2);
         start_timer = false;
     }
@@ -127,15 +113,13 @@ void handle_bulk_transfers(void)
     if ((!sending_in) & send_in) {
         send_in = false;
         sending_in = true;
-        udi_vendor_bulk_in_run((uint8_t *)&(packets_in[packet_index_send_in]),
-                               sizeof(IN_packet),
+        udi_vendor_bulk_in_run((uint8_t *)(comm_buffer->in), IN_PACKET_SIZE,
                                main_vendor_bulk_in_received);
     }
     if ((!sending_out) & send_out) {
         send_out = false;
         sending_out = true;
-        udi_vendor_bulk_out_run((uint8_t *)&(packets_out[packet_index_send_out]),
-                                sizeof(OUT_packet),
+        udi_vendor_bulk_out_run((uint8_t *)(comm_buffer->out), OUT_PACKET_SIZE,
                                 main_vendor_bulk_out_received);
     }
 }
@@ -182,31 +166,6 @@ void TC2_Handler(void)
     if(!sent_out)
         return;
     
-    if(sample_ctr == 512)
-    {
-        // Set up for next packet
-        packet_index_send_in = buffer_index;
-        buffer_index ^= 1;
-        
-        sample_ctr = 0;
-        signal_out = &packets_out[buffer_index].data[0];
-        if (unlikely(interleave_data)) {
-            meas_v_in = &packets_in[buffer_index].data[0];
-            meas_i_in = &packets_in[buffer_index].data[1];
-        }
-        else {
-            meas_v_in = &packets_in[buffer_index].data[0];
-            meas_i_in = &packets_in[buffer_index].data[256];
-        }
-        send_in = true;
-    }
-    
-    if(sample_ctr == 254)
-    {
-        packet_index_send_out = buffer_index^1;
-        send_out = true;
-    }
-    
     output_chan_id = current_chan;
     USART0->US_TPR = (uint32_t)&output_chan_id;
     USART0->US_TNPR = (uint32_t)signal_out;
@@ -235,9 +194,9 @@ void TC2_Handler(void)
             meas_i_in = meas_v_in + 1;
         }
         else {
-            signal_out += 256;
-            meas_v_in += 512;
-            meas_i_in = meas_v_in + 256;
+            signal_out += CHUNK_SAMPLES;
+            meas_v_in += CHUNK_SAMPLES*2;
+            meas_i_in = meas_v_in + CHUNK_SAMPLES;
         }
     }
     else
@@ -249,10 +208,30 @@ void TC2_Handler(void)
             meas_i_in = meas_v_in + 1;
         }
         else {
-            signal_out -= 255;
-            meas_v_in -= 511;
-            meas_i_in = meas_v_in + 256;
+            signal_out -= CHUNK_SAMPLES - 1;
+            meas_v_in -= CHUNK_SAMPLES*2 - 1;
+            meas_i_in = meas_v_in + CHUNK_SAMPLES;
         }
     }
+    
+    if(sample_ctr == 512)
+    {
+        // Set up for next packet
+        bulk_buffer_t * tmp = active_buffer;
+        active_buffer = comm_buffer;
+        comm_buffer = tmp;
+        
+        sample_ctr = 0;
+        signal_out = active_buffer->out;
+        meas_v_in = active_buffer->in;
+        if(unlikely(interleave_data))
+            meas_i_in = meas_v_in + 1;
+        else
+            meas_i_in = meas_v_in + CHUNK_SAMPLES;
+        send_in = true;
+    }
+    
+    if(sample_ctr == 254)
+        send_out = true;
 }
 
