@@ -4,7 +4,7 @@ build: all
 
 flash: cleanLocal all
 	./set_bootloader.rb
-	@ sleep 1
+	@ sleep 2
 	bossac -e -w -v -b m1000.bin 
 	@# @- python -c "import usb;usb.core.find(idVendor=0x0456,idProduct=0xcee2).ctrl_transfer(0x40|0x80, 0xBB, 0, 0, 1)" 2>&1 > /dev/null
 	@# @- python -c "import usb;usb.core.find(idVendor=0x064b,idProduct=0x784c).ctrl_transfer(0x40|0x80, 0xBB, 0, 0, 1)" 2>&1 > /dev/null
