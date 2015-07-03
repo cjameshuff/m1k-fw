@@ -15,7 +15,7 @@
 #define  USB_DEVICE_SERIAL_NAME
 #define  USB_DEVICE_GET_SERIAL_NAME_POINTER serial_number
 #define  USB_DEVICE_GET_SERIAL_NAME_LENGTH  33
-extern uint8_t serial_number[];
+extern uint8_t serial_number[];// defined in init.c
 
 #define  USB_DEVICE_HS_SUPPORT
 
