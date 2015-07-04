@@ -5,27 +5,34 @@
 
 
 // default values for DAC, pots
-typedef enum ch_params {
-    i0_dac = 0,
-    v0_adc = 1,
-    i0_adc = 2,
-    p1_simv = 3,
-    p2_simv = 4
+typedef struct {
+    uint16_t i0_dac;
+    uint16_t v0_adc;// not used
+    uint16_t i0_adc;// not used
+    uint16_t p1_simv;
+    uint16_t p2_simv;
 } ch_params;
-uint16_t def_data[5] = {26600, 0, 0, 0x30, 0x40};
 
-chan_mode ma = DISABLED;
-chan_mode mb = DISABLED;
+static const ch_params def_data = {
+    .i0_dac = 26600,
+    .v0_adc = 0,
+    .i0_adc = 0,
+    .p1_simv = 0x30,
+    .p2_simv = 0x40
+};
+
+static chan_mode ma = DISABLED;
+static chan_mode mb = DISABLED;
 
 void board_io_init(void)
 {
-    write_ad5663(0, def_data[i0_dac]);
-    write_ad5663(1, def_data[i0_dac]);
+    write_ad5663(0, def_data.i0_dac);
+    write_ad5663(1, def_data.i0_dac);
     // set pots for a sensible default
     cpu_delay_us(100, F_CPU);
-    write_ad5122(0, def_data[p1_simv], def_data[p2_simv]);
+    write_ad5122(0, def_data.p1_simv, def_data.p2_simv);
     cpu_delay_us(100, F_CPU);
-    write_ad5122(1, def_data[p1_simv], def_data[p2_simv]);
+    write_ad5122(1, def_data.p1_simv, def_data.p2_simv);
     cpu_delay_us(100, F_CPU);
 }
 
@@ -68,7 +75,6 @@ void write_adm1177(uint8_t v) {
     p.addr[0] = v;
     p.length = 0;
     twi_master_write(TWI0, &p);
-
 }
 
 /// read controller register
@@ -104,7 +110,7 @@ void set_mode(uint32_t chan, chan_mode m) {
                     pio_set(PIOB, PIO_PB19); // simv
                     pio_clear(PIOB, PIO_PB2);
                     pio_set(PIOB, PIO_PB3);
-                    write_ad5663(0, SWAP16(def_data[i0_dac]));
+                    write_ad5663(0, SWAP16(def_data.i0_dac));
                     break;
                     }
                 case SVMI: {
@@ -132,7 +138,7 @@ void set_mode(uint32_t chan, chan_mode m) {
                     pio_set(PIOB, PIO_PB20); // simv
                     pio_clear(PIOB, PIO_PB7);
                     pio_set(PIOB, PIO_PB8); // disconnect output
-                    write_ad5663(1, SWAP16(def_data[i0_dac]));
+                    write_ad5663(1, SWAP16(def_data.i0_dac));
                     break;
                 }
                 case SVMI: {

@@ -9,17 +9,44 @@
 #include "conf_usb.h"
 #include "conf_board.h"
 
-const char hwversion[] = xstringify(HW_VERSION);
-const char fwversion[] = xstringify(FW_VERSION);
 
+// *************************************************************************************************
+// Static and global variables
+// *************************************************************************************************
 uint32_t frame_number = 0;
 
-volatile bool reset;
-bool main_b_vendor_enable;
+static const char hwversion[] = xstringify(HW_VERSION);
+static const char fwversion[] = xstringify(FW_VERSION);
 
-uint8_t ret_data[64];
+static volatile bool reset;
+static bool main_b_vendor_enable;
 
-uint16_t cal_data[IFLASH0_PAGE_SIZE/sizeof(uint16_t)];
+static uint8_t ret_data[64];
+
+static USB_MicrosoftCompatibleDescriptor msft_compatible = {
+    .dwLength = sizeof(USB_MicrosoftCompatibleDescriptor) +
+                1*sizeof(USB_MicrosoftCompatibleDescriptor_Interface),
+    .bcdVersion = 0x0100,
+    .wIndex = 0x0004,
+    .bCount = 1,
+    .reserved = {0, 0, 0, 0, 0, 0, 0},
+    .interfaces = {
+        {
+            .bFirstInterfaceNumber = 0,
+            .reserved1 = 0,
+            .compatibleID = "WINUSB\0\0",
+            .subCompatibleID = {0, 0, 0, 0, 0, 0, 0, 0},
+            .reserved2 = {0, 0, 0, 0, 0, 0},
+        }
+    }
+};
+
+// uint16_t cal_data[IFLASH0_PAGE_SIZE/sizeof(uint16_t)];
+
+
+// *************************************************************************************************
+// Functions
+// *************************************************************************************************
 
 int main(void)
 {
@@ -115,23 +142,6 @@ bool msft_string_handle(void) {
     }
     return true;
 }
-static USB_MicrosoftCompatibleDescriptor msft_compatible = {
-    .dwLength = sizeof(USB_MicrosoftCompatibleDescriptor) +
-                1*sizeof(USB_MicrosoftCompatibleDescriptor_Interface),
-    .bcdVersion = 0x0100,
-    .wIndex = 0x0004,
-    .bCount = 1,
-    .reserved = {0, 0, 0, 0, 0, 0, 0},
-    .interfaces = {
-        {
-            .bFirstInterfaceNumber = 0,
-            .reserved1 = 0,
-            .compatibleID = "WINUSB\0\0",
-            .subCompatibleID = {0, 0, 0, 0, 0, 0, 0, 0},
-            .reserved2 = {0, 0, 0, 0, 0, 0},
-        }
-    }
-};
 
 /// handle control transfers
 bool main_setup_handle(void) {
