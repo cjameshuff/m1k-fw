@@ -26,21 +26,26 @@ static volatile bool sent_in;
 static volatile bool sent_out;
 
 static bulk_buffer_t buffers[2];
-static bulk_buffer_t * active_buffer = &(buffers[0]);
-static bulk_buffer_t * comm_buffer = &(buffers[1]);
+static volatile bulk_buffer_t * active_buffer = &(buffers[0]);
+static volatile bulk_buffer_t * comm_buffer = &(buffers[1]);
 
 static bool interleave_data = false;
 
 // reversed endianness from AD7682 datasheet
-static uint16_t v_adc_conf = 0x20F1;
-static uint16_t i_adc_conf = 0x20F7;
+// Note: the above comment appears to be incorrect?
+//    X X CFG INCC  INCC INCC INX INX  INx BW REF REF  REF SEQ SEQ RB
+// v  0 0 1   0     0    0    0   0    1   1  1   1    0   0   0   1
+// i  0 0 1   0     0    0    0   0    1   1  1   1    0   1   1   1
 
-static uint8_t current_chan;
-static uint32_t sample_ctr;
-static uint8_t output_chan_id;
-static uint16_t * signal_out;
-static uint16_t * meas_v_in;
-static uint16_t * meas_i_in;
+static uint16_t v_adc_conf = 0x20F1;// 0010 0000 1111 0001
+static uint16_t i_adc_conf = 0x20F7;// 0010 0000 1111 0111
+
+static volatile uint8_t current_chan;
+static volatile uint32_t sample_ctr;
+static volatile uint8_t output_chan_id;
+static volatile uint16_t * signal_out;
+static volatile uint16_t * meas_v_in;
+static volatile uint16_t * meas_i_in;
 
 
 static void main_vendor_bulk_out_received(udd_ep_status_t status,
@@ -68,7 +73,7 @@ void config_bulk_sampling(uint16_t period, uint16_t sync)
         send_in = false;
         
         tc_write_ra(TC0, 2, 10);
-        tc_write_rb(TC0, 2, period-10);
+        tc_write_rb(TC0, 2, period-4);
         tc_write_rc(TC0, 2, period);
         start_frame = sync;
     }
@@ -84,7 +89,7 @@ void poll_trigger(void)
     if (start_timer && ((frame_number == start_frame) || (start_frame == 0)))
     {
         // Perform initial buffer swap: active_buffer is empty, comm_buffer has output signal data.
-        bulk_buffer_t * tmp = active_buffer;
+        volatile bulk_buffer_t * tmp = active_buffer;
         active_buffer = comm_buffer;
         comm_buffer = tmp;
         
@@ -169,10 +174,20 @@ void TC2_Handler(void)
     output_chan_id = current_chan;
     USART0->US_TPR = (uint32_t)&output_chan_id;
     USART0->US_TNPR = (uint32_t)signal_out;
-    USART1->US_TPR = (uint32_t)&v_adc_conf;
-    USART1->US_RPR = (uint32_t)meas_v_in;
-    USART2->US_TPR = (uint32_t)&i_adc_conf;
-    USART2->US_RPR = (uint32_t)meas_i_in;
+    if(current_chan == A)
+    {
+        USART1->US_TPR = (uint32_t)&v_adc_conf;
+        USART1->US_RPR = (uint32_t)meas_v_in;
+        USART2->US_TPR = (uint32_t)&i_adc_conf;
+        USART2->US_RPR = (uint32_t)meas_i_in;
+    }
+    else
+    {
+        USART1->US_TPR = (uint32_t)&i_adc_conf;
+        USART1->US_RPR = (uint32_t)meas_i_in;
+        USART2->US_TPR = (uint32_t)&v_adc_conf;
+        USART2->US_RPR = (uint32_t)meas_v_in;
+    }
     
     PIOA->PIO_CODR = N_SYNC;
     USART0->US_TCR = 1;
@@ -182,45 +197,17 @@ void TC2_Handler(void)
     USART2->US_RCR = 2;
     USART2->US_TCR = 2;
     
-    ++sample_ctr;
     
-    // Set up for the next channel
-    if(current_chan == A)
-    {
-        current_chan = B;
-        if(unlikely(interleave_data)) {
-            ++signal_out;
-            meas_v_in += 2;
-            meas_i_in = meas_v_in + 1;
-        }
-        else {
-            signal_out += CHUNK_SAMPLES;
-            meas_v_in += CHUNK_SAMPLES*2;
-            meas_i_in = meas_v_in + CHUNK_SAMPLES;
-        }
-    }
-    else
-    {
-        current_chan = A;
-        if(unlikely(interleave_data)) {
-            ++signal_out;
-            meas_v_in += 2;
-            meas_i_in = meas_v_in + 1;
-        }
-        else {
-            signal_out -= CHUNK_SAMPLES - 1;
-            meas_v_in -= CHUNK_SAMPLES*2 - 1;
-            meas_i_in = meas_v_in + CHUNK_SAMPLES;
-        }
-    }
+    ++sample_ctr;
     
     if(sample_ctr == 512)
     {
         // Set up for next packet
-        bulk_buffer_t * tmp = active_buffer;
+        volatile bulk_buffer_t * tmp = active_buffer;
         active_buffer = comm_buffer;
         comm_buffer = tmp;
         
+        current_chan = A;
         sample_ctr = 0;
         signal_out = active_buffer->out;
         meas_v_in = active_buffer->in;
@@ -229,6 +216,38 @@ void TC2_Handler(void)
         else
             meas_i_in = meas_v_in + CHUNK_SAMPLES;
         send_in = true;
+    }
+    else
+    {
+        // Set up for the next channel
+        if(current_chan == A)
+        {
+            current_chan = B;
+            if(unlikely(interleave_data)) {
+                ++signal_out;
+                meas_v_in += 2;
+                meas_i_in = meas_v_in + 1;
+            }
+            else {
+                signal_out += CHUNK_SAMPLES;
+                meas_v_in += CHUNK_SAMPLES*2;
+                meas_i_in = meas_v_in + CHUNK_SAMPLES;
+            }
+        }
+        else
+        {
+            current_chan = A;
+            if(unlikely(interleave_data)) {
+                ++signal_out;
+                meas_v_in += 2;
+                meas_i_in = meas_v_in + 1;
+            }
+            else {
+                signal_out -= CHUNK_SAMPLES - 1;
+                meas_v_in -= CHUNK_SAMPLES*2 - 1;
+                meas_i_in = meas_v_in + CHUNK_SAMPLES;
+            }
+        }
     }
     
     if(sample_ctr == 254)
